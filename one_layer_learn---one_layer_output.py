@@ -31,6 +31,19 @@ num_neurons = img_neurons
 
 celltype = sim.IZK_curr_exp
 
+out_cell_type = 'CH'
+out_start_v = -65.
+out_params_izk_exc = {'a': izk_types[out_cell_type]['a'],
+                      'b': izk_types[out_cell_type]['b'],
+                      'c': izk_types[out_cell_type]['c'],
+                      'd': izk_types[out_cell_type]['d'],
+                      'v_init': out_start_v,
+                      'u_init': 0.2*out_start_v,
+                      'i_offset': 0.0,
+                      #'tau_syn_E': 2,
+                      #'tau_syn_I': 2,
+                     }
+
 exc_cell_type = 'RS'
 exc_start_v = -65.
 cell_params_izk_exc = {'a': izk_types[exc_cell_type]['a'],
@@ -96,15 +109,17 @@ learn_layer['exc'] = sim.Population(num_exc, neuron_model, cell_params_izk_exc,
 learn_layer['inh'] = sim.Population(num_inh, neuron_model, cell_params_izk_inh, 
                                     label="Learn layer - inh", structure=grid)
 
-id_layer = sim.Population(img_neurons, neuron_model, cell_params_izk_exc, 
+id_layer = sim.Population(img_neurons, neuron_model, out_params_izk_exc, 
                           label="Output layer - exc", structure=grid)
 
 ############ connections
 
 connections = {}
 
-distance_conn = sim.DistanceDependentProbabilityConnector("exp(-(d*d))", 
-                                                          allow_self_connections=False)
+dist_conn = sim.DistanceDependentProbabilityConnector("exp(-(d*d))", 
+                                                      delays=exc_delay_dist,
+                                                      weights=exc_weight_dist,
+                                                      allow_self_connections=False)
 
 prob_conn = {}
 prob_conn['exc2exc'] = sim.FixedProbabilityConnector(connection_probability,
@@ -118,20 +133,42 @@ prob_conn['exc2exc'] = sim.FixedProbabilityConnector(connection_probability,
 
 
 connections['in2exc'] = sim.Projection(input_layer, learn_layer['exc'], 
-                                       probability_conn, stdp_model)
+                                       dist_conn, stdp_model)
 connections['in2inh'] = sim.Projection(input_layer, learn_layer['inh'], 
-                                       probability_conn, stdp_model)
+                                       dist_conn, stdp_model)
 
 connections['exc2exc'] = sim.Projection(learn_layer['exc'], learn_layer['exc'], 
-                                        probability_conn, stdp_model)
+                                        prob_conn, stdp_model)
 connections['inh2inh'] = sim.Projection(learn_layer['inh'], learn_layer['inh'], 
-                                        probability_conn, stdp_model)
+                                        prob_conn, stdp_model)
 
 ############ start sim
 
 sim.run(sim_runtime)
 
 ############ get data out
+
+any_spikes_recorded = True
+
+sim_spikes = {}
+try:
+  sim_spikes['id'] = id_layer.getSpikes(compatible_output=True)
+  sim_spikes['in'] = input_layer.getSpikes(compatible_output=True)
+  sim_spikes['lrn_exc'] = learn_layer['exc'].getSpikes(compatible_output=True)
+  sim_spikes['lrn_inh'] = learn_layer['inh'].getSpikes(compatible_output=True)
+except IndexError:
+  print("No spikes?")
+  any_spikes_recorded = False
+
+############ plot
+
+if any_spikes_recorded:
+
+  symbols = ['s', 'o', 'x', '+']
+  for k in sim_spikes:
+    spike_times = [spike_time for (neuron_id, spike_time) in sim_spikes]
+    spike_ids  = [neuron_id for (neuron_id, spike_time) in sim_spikes]
+
 
 ############ finish sim
 
