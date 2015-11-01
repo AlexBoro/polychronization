@@ -67,11 +67,11 @@ izk_types = {'RS':  {'a': 0.02, 'b': 0.2,  'c': -65., 'd':  8.},
             
 
 use_poisson = True
-use_stdp = False
+use_stdp = True
 max_delay = 32.
 min_delay = 1.
 timestep  = 1.
-sim_runtime = 3600000.
+sim_runtime = 1000.
 
 num_neurons = 5
 

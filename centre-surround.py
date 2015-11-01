@@ -141,7 +141,7 @@ new_conn_list = True
 max_delay = 32.
 min_delay = 1.
 timestep  = 1.
-sim_runtime = 10000.
+sim_runtime = 1000.
 exc_conn_probability = 0.2
 inh_conn_probability = 0.3
 
@@ -153,33 +153,6 @@ img_height = 28
 img_neurons = img_width*img_height
 cube_z = 1.5
 num_neurons = img_neurons*cube_z*3.
-
-num_samples = 1
-focal_spikes = {}
-focal_path = "../../images-to-spikes/focal/mnist_spikes/focal/"
-for n in xrange(num_samples):
-  filename = "focal_corrected_MNIST-original-train-%d-?.pickle"%(n+1)
-  filename = os.path.join(focal_path, filename)
-  print filename 
-  for f in glob.glob(filename):
-    print("file:\t%s"%f)
-    print("reading!\n")
-    focal_spikes[n] = pickle.load(open(f))
-
-celltype = sim.IZK_curr_exp
-start_v = -70.
-out_cell_type = 'RS'
-out_start_v = start_v
-out_params_izk_out = {'a': izk_types[out_cell_type]['a'],
-                      'b': izk_types[out_cell_type]['b'],
-                      'c': izk_types[out_cell_type]['c'],
-                      'd': izk_types[out_cell_type]['d'],
-                      'v_init': out_start_v,
-                      'u_init': 0.2*out_start_v,
-                      'i_offset': izk_types[out_cell_type]['I'],
-                      #'tau_syn_E': 2,
-                      #'tau_syn_I': 2,
-                     }
 
 exc_cell_type = 'RS'
 exc_start_v = start_v
@@ -237,31 +210,14 @@ neuron_model = sim.IZK_curr_exp
 sim.set_number_of_neurons_per_core(neuron_model, 128)
 sim.setup(timestep=timestep, min_delay = min_delay, max_delay = max_delay)
 
-############ stdp
+############# stdp
 
 stdp_model = sim.STDPMechanism(
     timing_dependence=sim.SpikePairRule(tau_plus=20., tau_minus=20.0,
                                         nearest=True),
-    weight_dependence=sim.AdditiveWeightDependence(w_min=0.01, w_max=6.,
+    weight_dependence=sim.AdditiveWeightDependence(w_min=0.001, w_max=3.,
                                                    A_plus=0.02, A_minus=0.02)
   )
-
-############ random dist objects
-
-exc_delay_dist = RandomDistribution(distribution='uniform', 
-                                    parameters=[0,20.], rng=rng)
-                                    
-inh_delay_dist = RandomDistribution(distribution='uniform', 
-                                    parameters=[0,10.], rng=rng)
-                                    
-exc_weight_dist = RandomDistribution(distribution='uniform', 
-                                     parameters=[0,1.], rng=rng)
-                                     
-inh_weight_dist = RandomDistribution(distribution='uniform', 
-                                     parameters=[0,3.], rng=rng)
-
-normal_distribution = RandomDistribution('normal', [0., 1.], rng=rng)
-
 ############ populations 
 
 pop_2d = grid2d_coords(img_neurons)
@@ -274,25 +230,15 @@ num_exc = int(num_neurons*0.8)
 inh_3d = pop_3d[:num_inh]
 exc_3d = pop_3d[num_inh:]
 
-#~ inv_3d = rand_pop_3d_coords(img_neurons,
-                            #~ space_width=img_width*1.1, 
-                            #~ space_height=img_height*1.1, 
-                            #~ space_depth=1.)
-#~ inv_3d[:,2] -= 0.1 #translate back 0.1 units
+num_inv = int(img_neurons*0.5)
+inv_3d = rand_pop_3d_coords(num_inv,
+                            space_width=img_width*1.1, 
+                            space_height=img_height*1.1, 
+                            space_depth=0.2)
+inv_3d[:,2] -= 0.1 #translate back 0.1 units
 
 min_z = (pop_3d[:,2].min() - 0.2)*numpy.ones((pop_2d.shape[0], 1))
 pop_2d_3d = hstack((pop_2d, min_z))
-
-input_spikes = {}
-for n in xrange(num_samples):
-  input_spikes[n] = focal_to_spike_source_array(focal_spikes[n], 
-                                                img_width, img_height)
-  repeat_after(input_spikes[n], period_length, num_periods)
-
-full_input_spikes = input_spikes[0][in_id][:]
-for n in xrange(1, num_samples):
-  add_spikes(full_input_spikes, input_spikes[n][in_id], silence=period_length*2)
-
 
 input_layer = {}
 #~ for i in xrange(len(input_spikes)):
@@ -322,96 +268,91 @@ learn_layer['exc'] = sim.Population(num_exc+1, neuron_model, cell_params_izk_exc
                                     label="Learn layer - exc")
 learn_layer['inh'] = sim.Population(num_inh+1, neuron_model, cell_params_izk_inh, 
                                     label="Learn layer - inh")
-#~ learn_layer['inv'] = sim.Population(img_neurons, neuron_model, cell_params_izk_inv,
-                                    #~ label="Learn layer - inv")
+learn_layer['inv'] = sim.Population(img_neurons, neuron_model, cell_params_izk_inv,
+                                    label="Learn layer - inv")
                                     
-id_layer = sim.Population(num_exc+1, neuron_model, out_params_izk_out, 
-                          label="Output layer - exc")
-                          
-  
 learn_layer['exc'].record()
 learn_layer['inh'].record()
-#~ learn_layer['inv'].record()
-id_layer.record()
+learn_layer['inv'].record()
 
-print("\n\n")
-print("Input neurons: %s"%img_neurons)
-print("Excitatory neurons: %s"%num_exc)
-print("Inhibitory neurons: %s"%num_inh)
-print("Invert neurons: %s"%img_neurons)
-print("Identification neurons: %s"%(num_exc+1))
-print("----------------------------")
+ExternalDevices.activate_live_output_for(learn_layer['exc'], 
+                                         database_notify_host="localhost",
+                                         database_notify_port_num=19996)
+
+ExternalDevices.activate_live_output_for(learn_layer['inh'], 
+                                         database_notify_host="localhost",
+                                         database_notify_port_num=19997)
+
+ExternalDevices.activate_live_output_for(learn_layer['inv'], 
+                                         database_notify_host="localhost",
+                                         database_notify_port_num=19998)
+
 print("Total neurons: %s"%(2*img_neurons+num_exc*2+num_inh+1))
 
 ############ connectors
 
 
 
-input_strength = 3.# 1.8
+input_strength = 1.8
 
-in2exc = dist_dep_conn_3d_3d(pop_2d_3d, exc_3d, dist_rule = "exp(-(d**2))",
-                             conn_prob = 0.5, 
-                             weight=input_strength,
-                             new_format=new_conn_list)
+my_connectors = {}
+my_connectors['in2exc'] = dist_dep_conn_3d_3d(pop_2d_3d, exc_3d, 
+                                             dist_rule = "exp(-(d**2))",
+                                             conn_prob = 0.5, 
+                                             weight=input_strength,
+                                             new_format=new_conn_list)
 
-in2inh = dist_dep_conn_3d_3d(pop_2d_3d, inh_3d, dist_rule = "exp(-(d**2))",
-                             conn_prob = 0.5, 
-                             weight=input_strength,
-                             new_format=new_conn_list)
+my_connectors['in2inh'] = dist_dep_conn_3d_3d(pop_2d_3d, inh_3d, 
+                                             dist_rule = "exp(-(d**2))",
+                                             conn_prob = 0.5, 
+                                             weight=input_strength,
+                                             new_format=new_conn_list)
                              
-#~ in2inv = dist_dep_conn_3d_3d(pop_2d_3d, inv_3d, dist_rule = "exp(-(d**2))",
-                             #~ conn_prob = 0.2, 
-                             #~ weight=input_strength,
-                             #~ new_format=new_conn_list)
-                             
-inh2exc = dist_dep_conn_3d_3d(inh_3d, exc_3d, dist_rule = "exp(-(d**2))",
-                              conn_prob = 0.1,
-                              weight=input_strength,
-                              new_format=new_conn_list)
-inh2inh = dist_dep_conn_3d_3d(inh_3d, inh_3d, dist_rule = "exp(-(d**2))",
-                              conn_prob = 0.1,
-                              weight=input_strength,
-                              new_format=new_conn_list)
+my_connectors['in2inv'] = dist_dep_conn_3d_3d(pop_2d_3d, inv_3d, 
+                                             dist_rule = "exp(-(d**2))",
+                                             conn_prob = 0.2, 
+                                             weight=input_strength,
+                                             new_format=new_conn_list)
 
-exc2exc = dist_dep_conn_3d_3d(exc_3d, exc_3d, dist_rule = "exp(-sqrt(d*d))",
-                              conn_prob = 0.2, 
-                              weight=input_strength,
-                              new_format=new_conn_list)
-exc2inh = dist_dep_conn_3d_3d(exc_3d, inh_3d, dist_rule = "exp(-sqrt(d*d))",
-                              conn_prob = 0.2, 
-                              weight=input_strength,
-                              new_format=new_conn_list)
+my_connectors['inv2inh'] = dist_dep_conn_3d_3d(inv_3d, inh_3d, 
+                                               dist_rule = "exp(-(d**2))",
+                                               conn_prob = 0.1, 
+                                               new_format=new_conn_list)
+
+my_connectors['inv2exc'] = dist_dep_conn_3d_3d(inv_3d, exc_3d, 
+                                               dist_rule = "exp(-(d**2))",
+                                               conn_prob = 0.1, 
+                                               new_format=new_conn_list)
+
+
+my_connectors['inh2exc'] = dist_dep_conn_3d_3d(inh_3d, exc_3d, 
+                                              dist_rule = "exp(-(d**2))",
+                                              conn_prob = 0.1,
+                                              weight=2.0,
+                                              new_format=new_conn_list)
+
+my_connectors['inh2inh'] = dist_dep_conn_3d_3d(inh_3d, inh_3d, 
+                                              dist_rule = "exp(-(d**2))",
+                                              conn_prob = 0.1, 
+                                              new_format=new_conn_list)
+
+my_connectors['exc2exc'] = dist_dep_conn_3d_3d(exc_3d, exc_3d, 
+                                              dist_rule = "exp(-sqrt(d*d))",
+                                              conn_prob = 0.2, 
+                                              new_format=new_conn_list)
+                                            
+my_connectors['exc2inh'] = dist_dep_conn_3d_3d(exc_3d, inh_3d, 
+                                              dist_rule = "exp(-sqrt(d*d))",
+                                              conn_prob = 0.2, 
+                                              new_format=new_conn_list)
+
+
+
 
 connectors = {}
+for k in my_connectors:
+  connectors[k] = sim.FromListConnector(my_connectors[k])
 
-connectors['in2exc'] = sim.FromListConnector(in2exc)
-connectors['in2inh'] = sim.FromListConnector(in2inh)
-#connectors['in2inv'] = sim.FromListConnector(in2inv)
-connectors['inh2exc'] = sim.FromListConnector(inh2exc)
-connectors['inh2inh'] = sim.FromListConnector(inh2inh)
-connectors['exc2inh'] = sim.FromListConnector(exc2inh)
-connectors['exc2exc'] = sim.FromListConnector(exc2exc)
-
-connectors['exc2id'] = sim.AllToAllConnector(allow_self_connections=False, 
-                                             weights=normal_distribution,
-                                             delays=exc_delay_dist)
-#~ 
-#~ connectors['exc2id'] = sim.FixedProbabilityConnector(0.2, allow_self_connections=False, 
-                                             #~ weights=normal_distribution,
-                                             #~ delays=exc_delay_dist
-                                             #~ )
-#~ 
-#~ 
-#~ 
-#~ connectors['id2id'] = sim.AllToAllConnector(allow_self_connections=False, 
-                                            #~ weights=normal_distribution,
-                                           #~ # delays=inh_delay_dist
-                                           #~ )
-#~ 
-#~ connectors['id2id'] = sim.FixedProbabilityConnector(0.2, allow_self_connections=False, 
-                                             #~ weights=normal_distribution,
-                                             #~ delays=exc_delay_dist
-                                             #~ )
 ############ connections
 
 connections = {}
@@ -425,6 +366,7 @@ connections = {}
                                               #~ prob_conn['in'], stdp_model, 
                                               #~ target='excitatory')
 
+### Excitatory connections
 connections['in2exc'] = sim.Projection(input_layer[in_id], learn_layer['exc'],
                                        connectors['in2exc'], stdp_model,
                                        target='excitatory')
@@ -432,9 +374,11 @@ connections['in2exc'] = sim.Projection(input_layer[in_id], learn_layer['exc'],
 connections['in2inh'] = sim.Projection(input_layer[in_id], learn_layer['inh'],
                                        connectors['in2inh'], stdp_model,
                                        target='excitatory')
-#~ connections['in2inv'] = sim.Projection(input_layer[in_id], learn_layer['inh'],
-                                       #~ connectors['in2inv'], stdp_model,
-                                       #~ target='excitatory')
+                                       
+                                       
+connections['in2inv'] = sim.Projection(input_layer[in_id], learn_layer['inh'],
+                                       connectors['in2inv'], stdp_model,
+                                       target='excitatory')
 
 connections['exc2exc'] = sim.Projection(learn_layer['exc'], learn_layer['exc'], 
                                         connectors['exc2exc'], stdp_model,
@@ -444,6 +388,15 @@ connections['exc2inh'] = sim.Projection(learn_layer['exc'], learn_layer['inh'],
                                         connectors['exc2inh'], stdp_model,
                                         target='excitatory')
 
+connections['inv2exc'] = sim.Projection(learn_layer['inv'], learn_layer['exc'], 
+                                        connectors['inv2exc'], stdp_model,
+                                        target='excitatory')
+
+connections['inv2inh'] = sim.Projection(learn_layer['inv'], learn_layer['inh'], 
+                                        connectors['inv2inh'], stdp_model,
+                                        target='excitatory')
+
+### Inhibitory connections
 connections['inh2inh'] = sim.Projection(learn_layer['inh'], learn_layer['inh'], 
                                         connectors['inh2inh'], stdp_model,
                                         target='inhibitory')
@@ -451,15 +404,6 @@ connections['inh2inh'] = sim.Projection(learn_layer['inh'], learn_layer['inh'],
 connections['inh2exc'] = sim.Projection(learn_layer['inh'], learn_layer['exc'], 
                                         connectors['inh2exc'], stdp_model, 
                                         target='inhibitory')
-
-connections['exc2id'] = sim.Projection(learn_layer['exc'], id_layer, 
-                                       connectors['exc2id'], stdp_model,
-                                       target='excitatory')
-
-#~ connections['id2id'] = sim.Projection(id_layer, id_layer, 
-                                      #~ connectors['id2id'], 
-                                      #~ target='inhibitory')
-
 
 
 
