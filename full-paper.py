@@ -35,7 +35,7 @@ def split_times_pops(full_times, pop1_size, pop2_size):
 #runtime = 1000*60*60*24 
 runtime = 1000
 
-weight_to_spike = 3.
+weight_to_spike = 0.1
 
 timestep = 1.
 min_delay = 1.
