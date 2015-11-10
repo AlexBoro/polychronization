@@ -95,7 +95,10 @@ class FixedNumberPreConnector(AbstractConnector):
                 post_atom in pre_synaptic_neurons):
                 pre_synaptic_neurons.remove(post_atom)
 
-                
+            #~ print("Connections going to POST neuron %s (%s)"%(post_atom, len(pre_synaptic_neurons)))
+            #~ print(pre_synaptic_neurons)
+            #~ print("----------------------------------------------------")
+            
             for pre_atom in pre_synaptic_atoms:
                 id_lists[pre_atom].append(post_atom)
                 

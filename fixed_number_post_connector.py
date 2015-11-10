@@ -103,6 +103,10 @@ class FixedNumberPostConnector(AbstractConnector):
 
             id_lists[pre_atom] = post_synaptic_neurons
             
+            #~ print("Connections going from PRE neuron %s (%s)"%(pre_atom, n_present))
+            #~ print(post_synaptic_neurons)
+            #~ print("----------------------------------------------------")
+
             weight_lists[pre_atom] = (generate_parameter_array(
                       self._weights, n_present, post_synaptic_neurons) * weight_scale)
 
