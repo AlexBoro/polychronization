@@ -24,7 +24,7 @@ class FixedNumberPostConnector(AbstractConnector):
     """
     
     def __init__(self, n, weights=0.0, delays=1,
-                 allow_self_connections=True):
+                 allow_self_connections=True, debug=False):
         """
         Create a new connector.
         
@@ -62,7 +62,7 @@ class FixedNumberPostConnector(AbstractConnector):
         else:
           self._allow_self_connections = True
 
-
+        self._debug = debug
 
 
     def generate_synapse_list(self, presynaptic_population, 
@@ -72,7 +72,11 @@ class FixedNumberPostConnector(AbstractConnector):
         postvertex = postsynaptic_population._get_vertex
         n_post_atoms = postvertex.n_atoms
         n_pre_atoms = prevertex.n_atoms
-        
+        if not 0 <= self._n_post <= n_post_atoms:
+            raise exceptions.ConfigurationException(
+                "Sample size has to be a number less than the size of the "
+                "population but greater than zero")
+                
         id_lists = list()
         weight_lists = list()
         delay_lists = list()
@@ -83,12 +87,7 @@ class FixedNumberPostConnector(AbstractConnector):
             delay_lists.append(list())
             type_lists.append(list())
 
-        if not 0 <= self._n_post <= n_post_atoms:
-            raise exceptions.ConfigurationException(
-                "Sample size has to be a number less than the size of the "
-                "population but greater than zero")
 
-        
         for pre_atom in range(n_pre_atoms):
             post_synaptic_neurons = random.sample(range(0, n_post_atoms),
                                                   self._n_post)
@@ -103,9 +102,6 @@ class FixedNumberPostConnector(AbstractConnector):
 
             id_lists[pre_atom] = post_synaptic_neurons
             
-            #~ print("Connections going from PRE neuron %s (%s)"%(pre_atom, n_present))
-            #~ print(post_synaptic_neurons)
-            #~ print("----------------------------------------------------")
 
             weight_lists[pre_atom] = (generate_parameter_array(
                       self._weights, n_present, post_synaptic_neurons) * weight_scale)
@@ -115,6 +111,22 @@ class FixedNumberPostConnector(AbstractConnector):
 
             type_lists[pre_atom] = generate_parameter_array(
                                        synapse_type, n_present, post_synaptic_neurons)
+
+            if self._debug:
+                print("Connections going from PRE neuron %s (%s)"%(pre_atom, n_present))
+                print("Index, Weight, Delay, Type")
+                print("[")
+                for i in range(n_present):
+                  print("[%s, %s, %s, %s],"%(id_lists[pre_atom][i], weight_lists[pre_atom][i], 
+                                            delay_lists[pre_atom][i], type_lists[pre_atom][i]))
+                print("]")
+                
+                print("----------------------------------------------------")
+                print("----------------------------------------------------")
+                print("----------------------------------------------------")
+                
+                
+
 
         connection_list = [SynapseRowInfo(id_lists[i], weight_lists[i],
                                           delay_lists[i], type_lists[i])

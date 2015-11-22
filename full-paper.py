@@ -7,7 +7,7 @@ from numpy.random import randint
 from numpy import where
 import time
 import os
-
+from fixed_number_post_connector import FixedNumberPostConnector
 
 def random_thalamic_input(run_time, pop_size):
   spike_times = []
@@ -33,9 +33,9 @@ def split_times_pops(full_times, pop1_size, pop2_size):
 
 #millisecond*second*minutes*hour in a day
 #runtime = 1000*60*60*24 
-runtime  = 5000
-stimtime = 100
-weight_to_spike = 6.
+runtime  = 1000#*60*10 #10 min
+stimtime = 500
+weight_to_spike = 8.
 
 timestep = 1.
 min_delay = 1.
@@ -47,9 +47,9 @@ sim.setup(timestep=timestep, min_delay = min_delay, max_delay = max_delay)
 max_weight = 10.
 min_weight = 0.0
 a_plus = 0.1
-a_minus = 0.3# 0.12
+a_minus = 0.12
 tau_plus = 20.
-tau_minus = 30.
+tau_minus = 20.
 
 num_exc = 800
 num_inh = 200
@@ -99,11 +99,18 @@ stimI_pop = sim.Population(num_inh, sim.SpikeSourceArray,
 stdp_model = sim.STDPMechanism(
     timing_dependence=sim.SpikePairRule(tau_plus=tau_plus, tau_minus=tau_minus,
                                         nearest=True),
-    weight_dependence=sim.MultiplicativeWeightDependence(w_min=min_weight, w_max=max_weight,
+    weight_dependence=sim.AdditiveWeightDependence(w_min=min_weight, w_max=max_weight,
                                                    A_plus=a_plus, A_minus=a_minus)
   )
 
-rand_delays = sim.RandomDistribution(boundaries=(min_delay, max_delay))
+rng = sim.NumpyRNG(seed=int(time.time()))
+#rng = sim.NumpyRNG(seed=1)
+rand_delays = sim.RandomDistribution(distribution='uniform',
+                                     parameters=[min_delay, max_delay],
+                                     rng=rng,
+                                     boundaries=(min_delay, max_delay),
+                                     constrain='redraw',
+                                     )
 
 
 #~ conn_exc = sim.FixedProbabilityConnector(conn_prob, allow_self_connections=False,
@@ -114,43 +121,51 @@ rand_delays = sim.RandomDistribution(boundaries=(min_delay, max_delay))
                                          #~ weights=init_inh_weight,
                                          #~ delays=rand_delays)
 
-conn_exc = sim.FixedNumberPostConnector(max_conn_per_neuron, allow_self_connections=False,
-                                        weights=init_exc_weight,
-                                        delays=rand_delays) 
+conn_exc = FixedNumberPostConnector(max_conn_per_neuron, allow_self_connections=False,
+                                    weights=init_exc_weight,
+                                    delays=rand_delays,
+                                    debug=True
+                                    ) 
                                 
-conn_inh = sim.FixedNumberPostConnector(max_conn_per_neuron, allow_self_connections=False,
-                                        weights=init_inh_weight
+conn_inh = FixedNumberPostConnector(max_conn_per_neuron, allow_self_connections=False,
+                                    weights=init_inh_weight,
+                                    delays=1.,
+                                    debug=True
                                         )
 
-o2o_conn = sim.OneToOneConnector(weights=weight_to_spike)
+o2o_conn = sim.OneToOneConnector(weights=weight_to_spike, delays=1.)
 
 #~ print("-----------------------------------------------------------------")
 #~ print("-----------------------------------------------------------------")
 #~ print("Excitatory to Excitatory connections")
 #~ print("-----------------------------------------------------------------")
 e2e_proj = sim.Projection(exc_pop, exc_pop, conn_exc, target="excitatory",
-                          synapse_dynamics = sim.SynapseDynamics(slow = stdp_model))
+                          synapse_dynamics = sim.SynapseDynamics(slow = stdp_model)
+                         )
 
 #~ print("-----------------------------------------------------------------")
 #~ print("-----------------------------------------------------------------")
 #~ print("Excitatory to Inhibitory connections")
 #~ print("-----------------------------------------------------------------")
 e2i_proj = sim.Projection(exc_pop, inh_pop, conn_exc, target="excitatory",
-                          synapse_dynamics = sim.SynapseDynamics(slow = stdp_model))
+                          synapse_dynamics = sim.SynapseDynamics(slow = stdp_model)
+                         )
 
 #~ print("-----------------------------------------------------------------")
 #~ print("-----------------------------------------------------------------")
 #~ print("Inhibitory to Inhibitory connections")
 #~ print("-----------------------------------------------------------------")
 i2i_proj = sim.Projection(inh_pop, inh_pop, conn_inh, target="inhibitory",
-                          synapse_dynamics = sim.SynapseDynamics(slow = stdp_model))
+                          #~ synapse_dynamics = sim.SynapseDynamics(slow = stdp_model)
+                         )
 
 #~ print("-----------------------------------------------------------------")
 #~ print("-----------------------------------------------------------------")
 #~ print("Inhibitory to Excitatory connections")
 #~ print("-----------------------------------------------------------------")
 i2e_proj = sim.Projection(inh_pop, exc_pop, conn_inh, target="inhibitory",
-                          synapse_dynamics = sim.SynapseDynamics(slow = stdp_model))
+                          #~ synapse_dynamics = sim.SynapseDynamics(slow = stdp_model)
+                         )
 
 s2e_proj = sim.Projection(stimE_pop, exc_pop, o2o_conn, target="excitatory") 
 s2i_proj = sim.Projection(stimI_pop, inh_pop, o2o_conn, target="excitatory")
@@ -225,7 +240,7 @@ if exc_spikes_found or inh_spikes_found:
     #pylab.xlim([0,runtime+1])
     #pylab.ylim([-0.2,total_neurons+0.2])
     end_time = start_time + time_window
-    fig.suptitle("From %s ms to %s ms", start_time, end_time)
+    fig.suptitle("From %s ms to %s ms"%(start_time, end_time))
     if exc_spikes_found:
       spike_times[:] = []
       spike_ids[:] = []
@@ -254,8 +269,9 @@ if exc_spikes_found or inh_spikes_found:
       neuron_id = 0
       for neuron_spikes in total_stim:
         for spike_time in neuron_spikes:
-          spike_times.append(spike_time)
-          spike_ids.append(neuron_id)
+          if start_time <= spike_time < end_time:
+            spike_times.append(spike_time)
+            spike_ids.append(neuron_id)
 
         neuron_id += 1
       pylab.plot(spike_times, spike_ids, "o", markerfacecolor="None",
@@ -274,31 +290,31 @@ if exc_spikes_found or inh_spikes_found:
 # alpha 8 to 12 Hz == 125 to 83 ms
 # gamma > 32 Hz == 32 ms or less
 
-print("\n\n\n\n\n\n-----------------------------------------------------------------")
-print("-----------------------------------------------------------------")
-print("Exc to Exc Weights")
-print("-----------------------------------------------------------------")
-print(e2e_proj.getWeights())
-
-
-print("\n\n\n\n\n\n-----------------------------------------------------------------")
-print("-----------------------------------------------------------------")
-print("Exc to Inh Weights")
-print("-----------------------------------------------------------------")
-print(e2i_proj.getWeights())
-
-
-print("\n\n\n\n\n\n-----------------------------------------------------------------")
-print("-----------------------------------------------------------------")
-print("Inh to Inh Weights")
-print("-----------------------------------------------------------------")
-print(i2i_proj.getWeights())
-
-
-print("\n\n\n\n\n\n-----------------------------------------------------------------")
-print("-----------------------------------------------------------------")
-print("Inh to Exc Weights")
-print("-----------------------------------------------------------------")
-print(i2e_proj.getWeights())
+#~ print("\n\n\n\n\n\n-----------------------------------------------------------------")
+#~ print("-----------------------------------------------------------------")
+#~ print("Exc to Exc Weights")
+#~ print("-----------------------------------------------------------------")
+#~ print(e2e_proj.getWeights())
+#~ 
+#~ 
+#~ print("\n\n\n\n\n\n-----------------------------------------------------------------")
+#~ print("-----------------------------------------------------------------")
+#~ print("Exc to Inh Weights")
+#~ print("-----------------------------------------------------------------")
+#~ print(e2i_proj.getWeights())
+#~ 
+#~ 
+#~ print("\n\n\n\n\n\n-----------------------------------------------------------------")
+#~ print("-----------------------------------------------------------------")
+#~ print("Inh to Inh Weights")
+#~ print("-----------------------------------------------------------------")
+#~ print(i2i_proj.getWeights())
+#~ 
+#~ 
+#~ print("\n\n\n\n\n\n-----------------------------------------------------------------")
+#~ print("-----------------------------------------------------------------")
+#~ print("Inh to Exc Weights")
+#~ print("-----------------------------------------------------------------")
+#~ print(i2e_proj.getWeights())
 
 sim.end()
