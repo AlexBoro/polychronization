@@ -3,11 +3,58 @@ import pyNN.spiNNaker as sim
 from pyNN.random import RandomDistribution
 import pylab
 import numpy
-from numpy.random import randint
+from numpy.random import randint, uniform
 from numpy import where
 import time
 import os
 from fixed_number_post_connector import FixedNumberPostConnector
+
+
+def connections(max_conn, num_exc, num_inh, max_delay):
+  e2e_conns = []
+  e2i_conns = []
+  i2e_conns = []
+  i2i_conns = []
+  
+  num_neurons = num_exc + num_inh
+  
+  for pre_idx in range(num_neurons):
+    if pre_idx < num_exc: #excitatory to any
+      sample = randint(0, num_neurons, max_conn) 
+    else: #inhibitory to excitatory only
+      sample = randint(0, num_exc, max_conn)
+    
+    if pre_idx in sample:
+      del_idx = numpy.where(sample == pre_idx)
+      numpy.delete(sample, del_idx)
+    
+    if pre_idx < num_exc:
+      delays = randint(0, max_delay, max_conn)
+      
+    delay_idx = 0
+    for post_idx in sample:
+      delay = delays[delay_idx] if pre_idx < num_exc else 1. #if pre is exc, delay
+      weight = 6. if pre_idx < num_exc else 5. # if pre is exc, w=6.; else w=5.
+      pre = pre_idx if pre_idx < num_exc else pre_idx - num_exc # reset idx for pre inh
+      post = post_idx if post_idx < num_exc else post_idx - num_exc # reset idx for post inh
+      
+      connection = (pre, post, weight, delay)
+
+      if pre_idx < num_exc:
+        if post_idx < num_exc:
+          e2e_conns.append(connection)
+        else:
+          e2i_conns.append(connection)
+      else:
+        if post_idx < num_exc:
+          i2e_conns.append(connection)
+        else:
+          i2i_conns.append(connection)
+      
+      delay_idx += 1
+
+  return e2e_conns, e2i_conns, i2e_conns, i2i_conns
+
 
 def random_thalamic_input(run_time, pop_size):
   spike_times = []
@@ -105,33 +152,14 @@ stdp_model = sim.STDPMechanism(
 
 rng = sim.NumpyRNG(seed=int(time.time()))
 #rng = sim.NumpyRNG(seed=1)
-rand_delays = sim.RandomDistribution(distribution='uniform',
-                                     parameters=[min_delay, max_delay],
-                                     rng=rng,
-                                     boundaries=(min_delay, max_delay),
-                                     constrain='redraw',
-                                     )
 
+e2e_lst, e2i_lst, i2e_lst, i2i_lst = connections(max_conn_per_neuron, 
+                                                 num_exc, num_inh, max_delay)
 
-#~ conn_exc = sim.FixedProbabilityConnector(conn_prob, allow_self_connections=False,
-                                         #~ weights=init_exc_weight,
-                                         #~ delays=rand_delays)
-                                
-#~ conn_inh = sim.FixedProbabilityConnector(conn_prob, allow_self_connections=False,
-                                         #~ weights=init_inh_weight,
-                                         #~ delays=rand_delays)
-
-conn_exc = FixedNumberPostConnector(max_conn_per_neuron, allow_self_connections=False,
-                                    weights=init_exc_weight,
-                                    delays=rand_delays,
-                                    debug=True
-                                    ) 
-                                
-conn_inh = FixedNumberPostConnector(max_conn_per_neuron, allow_self_connections=False,
-                                    weights=init_inh_weight,
-                                    delays=1.,
-                                    debug=True
-                                        )
+e2e_conn = sim.FromListConnector(e2e_lst)
+e2i_conn = sim.FromListConnector(e2i_lst)
+i2e_conn = sim.FromListConnector(i2e_lst)
+i2i_conn = sim.FromListConnector(i2i_lst)
 
 o2o_conn = sim.OneToOneConnector(weights=weight_to_spike, delays=1.)
 
@@ -139,7 +167,7 @@ o2o_conn = sim.OneToOneConnector(weights=weight_to_spike, delays=1.)
 #~ print("-----------------------------------------------------------------")
 #~ print("Excitatory to Excitatory connections")
 #~ print("-----------------------------------------------------------------")
-e2e_proj = sim.Projection(exc_pop, exc_pop, conn_exc, target="excitatory",
+e2e_proj = sim.Projection(exc_pop, exc_pop, e2e_conn, target="excitatory",
                           synapse_dynamics = sim.SynapseDynamics(slow = stdp_model)
                          )
 
@@ -147,7 +175,15 @@ e2e_proj = sim.Projection(exc_pop, exc_pop, conn_exc, target="excitatory",
 #~ print("-----------------------------------------------------------------")
 #~ print("Excitatory to Inhibitory connections")
 #~ print("-----------------------------------------------------------------")
-e2i_proj = sim.Projection(exc_pop, inh_pop, conn_exc, target="excitatory",
+e2i_proj = sim.Projection(exc_pop, inh_pop, e2i_conn, target="excitatory",
+                          synapse_dynamics = sim.SynapseDynamics(slow = stdp_model)
+                         )
+
+#~ print("-----------------------------------------------------------------")
+#~ print("-----------------------------------------------------------------")
+#~ print("Inhibitory to Excitatory connections")
+#~ print("-----------------------------------------------------------------")
+i2e_proj = sim.Projection(inh_pop, exc_pop, i2e_conn, target="inhibitory",
                           synapse_dynamics = sim.SynapseDynamics(slow = stdp_model)
                          )
 
@@ -155,17 +191,11 @@ e2i_proj = sim.Projection(exc_pop, inh_pop, conn_exc, target="excitatory",
 #~ print("-----------------------------------------------------------------")
 #~ print("Inhibitory to Inhibitory connections")
 #~ print("-----------------------------------------------------------------")
-i2i_proj = sim.Projection(inh_pop, inh_pop, conn_inh, target="inhibitory",
-                          #~ synapse_dynamics = sim.SynapseDynamics(slow = stdp_model)
+i2i_proj = sim.Projection(inh_pop, inh_pop, i2i_conn, target="inhibitory",
+                          synapse_dynamics = sim.SynapseDynamics(slow = stdp_model)
                          )
 
-#~ print("-----------------------------------------------------------------")
-#~ print("-----------------------------------------------------------------")
-#~ print("Inhibitory to Excitatory connections")
-#~ print("-----------------------------------------------------------------")
-i2e_proj = sim.Projection(inh_pop, exc_pop, conn_inh, target="inhibitory",
-                          #~ synapse_dynamics = sim.SynapseDynamics(slow = stdp_model)
-                         )
+
 
 s2e_proj = sim.Projection(stimE_pop, exc_pop, o2o_conn, target="excitatory") 
 s2i_proj = sim.Projection(stimI_pop, inh_pop, o2o_conn, target="excitatory")

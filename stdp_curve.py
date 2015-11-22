@@ -14,8 +14,8 @@ import spynnaker.pyNN as sim
 time_between_pairs = 1000
 num_pairs = 60
 start_w = 5.
-#~ delta_t = [-100, -60, -40, -30, -20, -10, -1, 1, 10, 20, 30, 40, 60, 100]
-delta_t = [x for x in range(-100, 100, 5)]
+delta_t = [-100, -60, -40, -30, -20, -10, -1, 1, 10, 20, 30, 40, 60, 100]
+#~ delta_t = [x for x in range(-100, 100, 5)]
 start_time = 200
 mad = True
 weight_to_spike = 8.
